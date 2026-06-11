@@ -66,6 +66,38 @@ export const useMoviesStore = defineStore('movie', () => {
         }
     };
 
+    const selectedMovie = ref(null);
+
+    const fetchMovieDetail = async (movieId) => {
+        isLoading.value = true;
+        errorMessage.value = '';
+        selectedMovie.value = null;
+
+        try {
+            const API_KEY = 'fcedda2b5954c45c578f6dc072005895';
+            const url = `https://api.themoviedb.org/3/movie/${movieId}`;
+
+            const response = await axios.get(url, {
+                params: {
+                    api_key: API_KEY,
+                    language: 'ko-KR'
+                }
+            });
+            selectedMovie.value = response.data;
+        }
+        catch (error) {
+            if (error.response && error.response.status === 404) {
+                errorMessage.value = '존재하지 않거나 삭제된 영화 정보입니다.';
+            }
+            else {
+                errorMessage.value = '서버 통신 중 에러가 발생했습니다.'
+            }
+        }
+        finally {
+            isLoading.value = false;
+        }
+    }
+
     // [4] 컴포넌트가 사용할 수 있도록 상태와 함수들을 반환합니다.
     return {
         movies,
@@ -73,6 +105,8 @@ export const useMoviesStore = defineStore('movie', () => {
         isLoading,
         errorMessage,
         fetchMovies,
-        toggleFavorite
+        toggleFavorite,
+        selectedMovie,
+        fetchMovieDetail
     }
 });
