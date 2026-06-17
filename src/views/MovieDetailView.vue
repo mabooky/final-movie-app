@@ -1,68 +1,58 @@
 <script setup>
-import { useMoviesStore } from '@/stores/movies';
+import { useMovieStore } from '@/stores/movie';
+import { Failure, Success } from '@/utils/Result';
 import axios from 'axios';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 const route = useRoute();
 const router = useRouter();
-const store = useMoviesStore();
+const store = useMovieStore();
 
-onMounted(() => {
+const fetchResult = ref(null);
+const movie = ref(null);
+onMounted(async () => {
+    document.title = '영화 상세정보 - NETVUE';
+    window.scrollTo(0, 0); // 페이지 상단으로 스크롤 이동
+
     const movieId = route.params.id; // 주소창에서 ID 추출
-    store.fetchMovieDetail(movieId); // 스토어 단일 API 호출
+    fetchResult.value = await store.fetchMovieDetails(movieId); // 스토어 단일 API 호출
+    if (fetchResult.value && fetchResult.value instanceof Success) {
+        movie.value = fetchResult.value.data;
+        document.title = `${movie.value.title} - NETVUE`;
+    }
 });
 
 const formattedBudget = computed(() => {
-    const budget = store.selectedMovie?.budget;
-    return budget && budget !== 0
-        ? `$${budget.toLocaleString('en-US')}`
+    return movie.value.budget !== 0 
+        ? `$${movie.value.budget.toLocaleString('en-US')}` 
         : '공개되지 않음';
 });
 
 const formattedRevenue = computed(() => {
-    const revenue = store.selectedMovie?.revenue;
-    return revenue && revenue !== 0
-        ? `$${revenue.toLocaleString('en-US')}`
+    return movie.value.revenue !== 0 
+        ? `$${movie.value.revenue.toLocaleString('en-US')}` 
         : '집계되지 않음';
 });
 
-watch(
-    () => store.selectedMovie,
-    (newMovie) => {
-        if (newMovie && newMovie.title) {
-            document.title = `${newMovie.title} | NETVUE 상세정보`;
-        }
-    },
-    { immediate: true }
-);
-
-const goBack = () => {
-    router.back(); // 브라우저 히스토리 스택을 되돌려 목록 스크롤 위치 보존
-};
-
 const aiReview = ref('');
 const isAiLoading = ref(false);
-
-const generateAIReview = async () => {
-    if (!store.selectedMovie) return;
+async function generateAIReview() {
     isAiLoading.value = true;
-    aiReview.value = '';
 
     try {
-        const promptMessage = `
-            너는 영화 평론 유튜버야. 아래 영화 데이터를 기반으로 블로그 글처럼
-            2-3문단 분량의 상세하고 흡입력 있는 추천평을 작성해줘(이모지 필수).
-            제목: ${store.selectedMovie.title}
-            장르: ${store.selectedMovie.genres.map(g => g.name).join(', ')}
-            평점: ${store.selectedMovie.vote_average.toFixed(1)} / 10
-        `
+        const prompt = '너는 40년 경력 이상의 전설적인 영화 평론 유튜버야. ' +
+            '아래 영화 데이터를 기반으로 왜 사용자가 이 영화를 봐야하는지 설득하는 2-3문단 분량의 상세하고 ' + 
+            '흡입력 있는 추천평을 작성해줘(이모지 필수). 단, 네가 40년 이상의 경력을 가졌다는 사실은 언급하지 마.\n' +
+            `제목: ${movie.value.title}\n` +
+            `장르: ${movie.value.genres.map(g => g.name).join(', ')}\n` +
+            `평점: ${movie.value.vote_average.toFixed(1)} / 10`;
 
         const response = await axios.post(
             'https://api.groq.com/openai/v1/chat/completions',
             {
-                model: 'llama-3.1-8b-instant',
-                messages: [{ role: 'user', content: promptMessage }]
+                model: 'openai/gpt-oss-20b',
+                messages: [{ role: 'user', content: prompt }]
             },
             {
                 headers: {
@@ -72,11 +62,23 @@ const generateAIReview = async () => {
             }
         );
 
-        aiReview.value = response.data.choices[0].message.content;
+        let reviewInnerHTML = response.data.choices[0].message.content
+            .replace(/\n/g, '<br>'); // 줄바꿈 HTML로 변환
+        let willOpenTag = true;
+        while (true) {
+            const nextDoubleAsteriskIndex = reviewInnerHTML.indexOf('**');
+            if (nextDoubleAsteriskIndex === -1) break;
+
+            const tag = willOpenTag ? '<strong>' : '</strong>';
+            reviewInnerHTML = reviewInnerHTML.replace('**', tag);
+            willOpenTag = !willOpenTag;
+        }
+
+        aiReview.value = reviewInnerHTML;
     }
     catch (error) {
-        console.error('AI 호출 에러: ', error);
-        aiReview.value = '서버가 혼잡합니다. 잠시 후 다시 시도해 주세요.';
+        aiReview.value = '🚨 AI 추천사 생성 중 오류가 발생했습니다.<br><br>상세 오류 메시지: ' + 
+            (error.response?.data?.error || error.message || '알 수 없는 오류');
     }
     finally {
         isAiLoading.value = false;
@@ -85,30 +87,35 @@ const generateAIReview = async () => {
 </script>
 
 <template>
-    <main v-if="store.selectedMovie" class="detail-page">
+    <div v-if="!fetchResult" class="full-screen-loading-gate">
+        <div class="loading-spinner"></div>
+        <p class="loading-text">시네마틱 데이터 센터로부터 초고화질 상세 정보를 퍼 올리는 중입니다...</p>
+    </div>
+
+    <main v-else-if="fetchResult && fetchResult instanceof Success" class="detail-page">
         <div class="backdrop-layer"
-            :style="{ backgroundImage: `url(https://image.tmdb.org/t/p/original${store.selectedMovie.backdrop_path})` }">
+            :style="{ backgroundImage: `url(https://image.tmdb.org/t/p/original${movie.backdrop_path})` }">
             <div class="black-curtain"></div>
         </div>
         <div class="content-container">
-            <button @click="goBack" class="back-floating-btn">↩ 영화 목록으로 돌아가기</button>
+            <button @click="router.back" class="back-floating-btn">↩ 영화 목록으로 돌아가기</button>
             <div class="movie-hero-grid">
                 <div class="poster-zone">
-                    <img v-if="store.selectedMovie?.poster_path"
-                        :src="`https://image.tmdb.org/t/p/w500${store.selectedMovie.poster_path}`"
+                    <img v-if="movie.poster_path"
+                        :src="`https://image.tmdb.org/t/p/w500${movie.poster_path}`"
                         class="main-poster" />
                     <div v-else class="poster-placeholder">포스터 이미지 없음</div>
                 </div>
                 <div class="info-zone">
-                    <h1 class="movie-main-title">{{ store.selectedMovie?.title }}</h1>
-                    <p class="tagline" v-if="store.selectedMovie?.tagline">"{{ store.selectedMovie.tagline }}"</p>
+                    <h1 class="movie-main-title">{{ movie.title }}</h1>
+                    <p class="tagline" v-if="movie.tagline">"{{ movie.tagline }}"</p>
                     <div class="meta-dashboard">
-                        <span class="badge rating">⭐ {{ store.selectedMovie?.vote_average.toFixed(1) }} / 10</span>
-                        <span class="badge runtime">⏱ {{ store.selectedMovie?.runtime }}분</span>
-                        <span class="badge release">🗓 {{ store.selectedMovie?.release_date }} 개봉</span>
+                        <span class="badge rating">⭐ {{ movie.vote_average.toFixed(1) }} / 10</span>
+                        <span class="badge runtime">⏱ {{ movie.runtime }}분</span>
+                        <span class="badge release">🗓 {{ movie.release_date }} 개봉</span>
                     </div>
                     <div class="genres-wrapper">
-                        <span v-for="genre in store.selectedMovie?.genres" :key="genre.id" class="genre-tag">
+                        <span v-for="genre in movie.genres" :key="genre.id" class="genre-tag">
                             {{ genre.name }}
                         </span>
                     </div>
@@ -125,7 +132,7 @@ const generateAIReview = async () => {
                     <div class="synopsis-container">
                         <h3 class="synopsis-title">시놉시스 줄거리</h3>
                         <p class="synopsis-text">
-                            {{ store.selectedMovie?.overview || '정식 등록된 줄거리 정보가 존재하지 않습니다.' }}
+                            {{ movie.overview || '정식 등록된 줄거리 정보가 존재하지 않습니다.' }}
                         </p>
                     </div>
 
@@ -137,26 +144,23 @@ const generateAIReview = async () => {
                         </button>
 
                         <div v-if="aiReview" class="ai-result-box">
-                            <p>{{ aiReview }}</p>
+                            <p v-html="aiReview"></p>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </main>
-    <div v-else-if="store.isLoading" class="full-screen-loading-gate">
-        <div class="loading-spinner"></div>
-        <p class="loading-text">시네마틱 데이터 센터로부터 초고화질 상세 정보를 퍼 올리는 중입니다...</p>
-    </div>
-    <div v-else-if="store.errorMessage" class="full-screen-error-gate">
+
+    <div v-else-if="fetchResult && fetchResult instanceof Failure" class="full-screen-error-gate">
         <span class="error-icon">🚨</span>
         <h2 class="error-title">시스템 경고가 발생했습니다</h2>
-        <p class="error-msg">{{ store.errorMessage }}</p>
+        <p class="error-msg">상세 오류 메시지: {{ fetchResult.errorMessage }}</p>
         <button @click="router.push('/movies')" class="error-return-btn">안전한 영화 목록 페이지로 도망치기</button>
     </div>
 </template>
 
-<style>
+<style scoped>
 /* 페이지 전체 다크 모드 및 배경 스냅샷 연출 */
 .detail-page {
     position: relative;
@@ -474,6 +478,12 @@ const generateAIReview = async () => {
     width: 100%;
 }
 
+.ai-btn:disabled {
+    background: rgb(99, 99, 99);
+    pointer-events: none;
+    color: #dcdde1;
+}
+
 .ai-result-box {
     margin-top: 15px;
     padding: 15px;
@@ -481,5 +491,6 @@ const generateAIReview = async () => {
     border-left: 4px solid #8a2be2;
     color: #fff;
     line-height: 1.6;
+    font-family: serif;
 }
 </style>

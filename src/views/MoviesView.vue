@@ -1,31 +1,33 @@
 <script setup>
-import { useFavoritesStore } from '@/stores/favorites';
-import { useMoviesStore } from '@/stores/movies';
+import { useMovieStore } from '@/stores/movie';
+import { Failure } from '@/utils/Result';
 import { onMounted, ref } from 'vue';
 
 // 중앙 금고 호출
-const store = useMoviesStore();
+const store = useMovieStore();
+
+const fetchResult = ref(null);
 
 // onMounted는 이 화면이 브라우저에 장착(Mount)되는 순간을 감지하여 내부 코드를 즉시 실행합니다.
-onMounted(() => {
-    store.fetchMovies();
-    document.title = '🍿 국내 극장 화제작 (인기순)';
+onMounted(async () => {
+    document.title = '실시간 인기 상영작 - NETVUE';
+
+    fetchResult.value = await store.fetchMovies();
 });
 </script>
 
 <template>
     <main class="page">
         <div class="header-section">
-            <h1>🍿 국내 극장 화제작 (인기순)</h1>
-            <p class="sub-title"> 2025년 이후 국내 정식 개봉한 실시간 인기 상영작</p>
+            <h1>🍿 실시간 인기 상영작 🍿</h1>
         </div>
 
-        <div v-if="store.isLoading" class="status-message loading">
+        <div v-if="!fetchResult" class="status-message loading">
             ⏳ 실시간 국내 개봉작 데이터를 싣고 오는 중입니다...
         </div>
 
-        <div v-else-if="store.errorMessage" class="status-message error">
-            🚨 {{ store.errorMessage }}
+        <div v-else-if="fetchResult && fetchResult instanceof Failure" class="status-message error">
+            🚨 오류가 발생했습니다.<br><br>상세 오류 메시지: {{ fetchResult.errorMessage }}
         </div>
 
         <div v-else class="movie-list">
@@ -43,8 +45,8 @@ onMounted(() => {
                             : '국내에 등록된 줄거리 요약 정보가 없습니다.'
                         }}</p>
                     <button @click="store.toggleFavorite(movie.id)" class="fav-btn"
-                        :class="{ active: movie.isFavorite }">
-                        {{ movie.isFavorite ? '💖 찜 해제' : '🤍 찜하기' }}
+                        :class="{ active: store.favoriteMovieIds.has(movie.id) }">
+                        {{ store.favoriteMovieIds.has(movie.id) ? '💖 찜 해제' : '🤍 찜하기' }}
                     </button>
                 </div>
                 <RouterLink :to="`/movies/${movie.id}`" class="stretched-link"

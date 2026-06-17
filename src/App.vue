@@ -1,32 +1,8 @@
 <script setup>
-import { computed } from 'vue';
 import { RouterLink, RouterView } from 'vue-router';
-// 전역 비동기 세션 데이터가 들어있는 스토어를 임포트합니다.
-import { useMoviesStore } from './stores/movies';
+import { useMovieStore } from './stores/movie';
 
-const store = useMoviesStore();
-
-// [반응형 연산 1] 세션 스토리지 기반 실시간 찜 개수를 계산합니다.
-const totalFavoritesCount = computed(() => {
-    return store.favorites.length;
-});
-
-// [반응형 연산 2] TMDB vote_average 스펙에 맞춘 평균 평점 실시간 집계 로직입니다.
-const averageFavoritesRating = computed(() => {
-    // 방어 코드: 찜 목록이 완전히 비어있을 때 NaN 에러를 뿜지 않도록 0.0을 안전하게 반환합니다.
-    if (store.favorites.length === 0) {
-        return '0.0';
-    }
-
-    // .reduce()를 활용하여 찜한 영화들의 평점 종합을 누적 계산합니다.
-    const totalRatingSum = store.favorites.reduce((accumulator, movie) => {
-        return accumulator + movie.vote_average;
-    }, 0);
-
-    // 종합을 총 개수로 나누고 소수점 첫째 자리까지 포맷팅합니다.
-    const calculatedAverage = totalRatingSum / store.favorites.length;
-    return calculatedAverage.toFixed(1);
-});
+const store = useMovieStore();
 </script>
 
 <template>
@@ -43,22 +19,27 @@ const averageFavoritesRating = computed(() => {
                     <RouterLink to="/movies" class="nav-item">영화 목록</RouterLink>
                 </nav>
 
-                <div class="header-dashboard">
-                    <div class="dashboard-badge favorite-count">
-                        <span class="badge-label">❤️ 찜한 작품</span>
-                        <span class="badge-value">{{ totalFavoritesCount }}개</span>
-                    </div>
+                <div class="badge">
+                    <span class="badge__label">❤️ 찜한 작품</span>
+                    <span class="badge__value">{{ store.favoriteMovieIds.size }}개</span>
 
-                    <div class="dashboard-badge average-rating">
-                        <span class="badge-label">⭐ 평균 평점</span>
-                        <span class="badge-value">{{ averageFavoritesRating }} / 10</span>
-                    </div>
+                    <div class="badge__divider"></div>
+
+                    <span class="badge__label">⭐ 평균 평점</span>
+                    <span class="badge__value badge__value--rating">
+                        {{ store.favoriteMoviesAvgRating.toFixed(1) }} / 10
+                    </span>
                 </div>
             </div>
         </header>
 
         <main class="main-content">
-            <RouterView />
+            <!-- KeepAlive를 활용하여 MoviesView와 FavoriteMoviesView 컴포넌트를 캐싱합니다. -->
+            <RouterView v-slot="{ Component }">
+                <KeepAlive :include="['MoviesView', 'FavoriteMoviesView']">
+                    <component :is="Component" />
+                </KeepAlive>
+            </RouterView>
         </main>
     </div>
 </template>
@@ -143,35 +124,53 @@ body {
     background-color: rgba(255, 87, 87, 0.1);
 }
 
-.header-dashboard {
+.badge {
+    position: relative;
     display: flex;
-    gap: 15px;
-}
-
-.dashboard-badge {
-    background-color: #2f3542;
-    padding: 10px 16px;
+    padding: 8px 18px;
     border-radius: 30px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    background-color: #2f3542;
     border: 1px solid #3f4656;
+    /* cursor: pointer; */
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
 }
 
-.badge-label {
+.badge::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: #ffffff;
+    opacity: 0;
+    z-index: 1;
+}
+
+/* .badge:hover::after {
+    opacity: 0.05;
+} */
+
+.badge__label {
     font-size: 13px;
     color: #a4b0be;
     font-weight: 500;
 }
 
-.badge-value {
+.badge__value {
     font-size: 14px;
     font-weight: 800;
     color: #ffffff;
 }
 
-.average-rating .badge-value {
+.badge__value--rating {
     color: #e1b12c;
+}
+
+.badge__divider {
+    width: 1px;
+    margin-inline: 4px;
+    background-color: #3f4656;
 }
 
 .main-content {
