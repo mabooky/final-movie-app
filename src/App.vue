@@ -19,9 +19,9 @@ const store = useMovieStore();
                     <RouterLink to="/movies" class="nav-item">영화 목록</RouterLink>
                 </nav>
 
-                <div class="badge">
+                <RouterLink to="/favorites" class="badge">
                     <span class="badge__label">❤️ 찜한 작품</span>
-                    <span class="badge__value">{{ store.favoriteMovieIds.size }}개</span>
+                    <span class="badge__value">{{ store.favoriteMovies.length }}개</span>
 
                     <div class="badge__divider"></div>
 
@@ -29,7 +29,7 @@ const store = useMovieStore();
                     <span class="badge__value badge__value--rating">
                         {{ store.favoriteMoviesAvgRating.toFixed(1) }} / 10
                     </span>
-                </div>
+                </RouterLink>
             </div>
         </header>
 
@@ -131,10 +131,12 @@ body {
     border-radius: 30px;
     background-color: #2f3542;
     border: 1px solid #3f4656;
-    /* cursor: pointer; */
+    cursor: pointer;
     flex-direction: row;
     align-items: stretch;
     gap: 8px;
+    text-decoration: none;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .badge::after {
@@ -147,9 +149,15 @@ body {
     z-index: 1;
 }
 
-/* .badge:hover::after {
+.badge:hover::after {
     opacity: 0.05;
-} */
+}
+
+.badge.router-link-active {
+    background-color: #3d2330;
+    border-color: #ff4757;
+    box-shadow: 0 0 12px rgba(255, 71, 87, 0.25);
+}
 
 .badge__label {
     font-size: 13px;

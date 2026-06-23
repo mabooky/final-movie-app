@@ -1,19 +1,70 @@
 <script setup>
 import { useMovieStore } from '@/stores/movie';
-import { Failure } from '@/utils/Result';
-import { onMounted, ref } from 'vue';
+import { Failure, Success } from '@/utils/Result';
+import MovieCardList from '@/components/MovieCardList.vue';
+import Pagination from '@/components/Pagination.vue';
+import { computed, onActivated, onMounted, ref } from 'vue';
 
-// 중앙 금고 호출
+defineOptions({ name: 'MoviesView' });
+
 const store = useMovieStore();
-
 const fetchResult = ref(null);
+const currentPage = ref(1);
+const totalPages = computed(() => {
+    return fetchResult.value instanceof Success ? Math.ceil(store.movies.length / 10) : 1;
+});
 
-// onMounted는 이 화면이 브라우저에 장착(Mount)되는 순간을 감지하여 내부 코드를 즉시 실행합니다.
 onMounted(async () => {
-    document.title = '실시간 인기 상영작 - NETVUE';
-
     fetchResult.value = await store.fetchMovies();
 });
+
+onActivated(() => {
+    document.title = '실시간 인기 상영작 - NETVUE';
+})
+
+async function onPageChange(page) {
+    currentPage.value = page;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+const sortBy = ref('default');
+
+const sortedMovies = computed(() => {
+    const list = [...store.movies];
+    switch (sortBy.value) {
+        case 'title':
+            return list.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+        case 'release_date':
+            return list.sort((a, b) => new Date(b.release_date) - new Date(a.release_date));
+        case 'rating':
+            return list.sort((a, b) => b.vote_average - a.vote_average);
+        default:
+            return list;
+    }
+});
+
+const listState = computed(() => {
+    if (!fetchResult.value) {
+        return { state: 'loading' };
+    }
+    else if (fetchResult.value instanceof Failure) {
+        return { state: 'error', message: fetchResult.value.errorMessage };
+    }
+    else if (fetchResult.value instanceof Success) {
+        return { 
+            state: 'loaded',
+            movies: sortedMovies.value.slice((currentPage.value - 1) * 10, currentPage.value * 10),
+            favoriteMovies: store.favoriteMovies
+        };
+    }
+});
+
+function onToggleFavorite(movieId) {
+    const movie = store.movies.find(m => m.id === movieId);
+    if (movie) {
+        store.toggleFavorite(movie);
+    }
+}
 </script>
 
 <template>
@@ -22,37 +73,49 @@ onMounted(async () => {
             <h1>🍿 실시간 인기 상영작 🍿</h1>
         </div>
 
-        <div v-if="!fetchResult" class="status-message loading">
-            ⏳ 실시간 국내 개봉작 데이터를 싣고 오는 중입니다...
+        <!-- 정렬 탭 -->
+        <div class="sort-section">
+            <button
+                class="sort-tab"
+                :class="{ 'sort-tab--active': sortBy === 'default' }"
+                @click="sortBy = 'default'"
+            >
+                📋 기본순
+            </button>
+            <button
+                class="sort-tab"
+                :class="{ 'sort-tab--active': sortBy === 'title' }"
+                @click="sortBy = 'title'"
+            >
+                🔤 제목순
+            </button>
+            <button
+                class="sort-tab"
+                :class="{ 'sort-tab--active': sortBy === 'release_date' }"
+                @click="sortBy = 'release_date'"
+            >
+                📅 개봉일순
+            </button>
+            <button
+                class="sort-tab"
+                :class="{ 'sort-tab--active': sortBy === 'rating' }"
+                @click="sortBy = 'rating'"
+            >
+                ⭐ 평점순
+            </button>
         </div>
 
-        <div v-else-if="fetchResult && fetchResult instanceof Failure" class="status-message error">
-            🚨 오류가 발생했습니다.<br><br>상세 오류 메시지: {{ fetchResult.errorMessage }}
-        </div>
+        <MovieCardList
+            :state="listState"
+            @toggle-favorite="onToggleFavorite"
+        />
 
-        <div v-else class="movie-list">
-            <div v-for="movie in store.movies" :key="movie.id" class="movie-card">
-                <img v-if="movie.poster_path" :src="`https://image.tmdb.org/t/p/w500${movie.poster_path}`"
-                    :alt="movie.title" class="poster" />
-                <div v-else class="poster-placeholder">이미지 준비 중</div>
-                <div class="card-content">
-                    <h3 class="title">{{ movie.title }}</h3>
-                    <p class="release-date" v-if="movie.release_date">📅 개봉일: {{ movie.release_date }}</p>
-                    <p class="rating">⭐ {{ movie.vote_average.toFixed(1) }} / 10</p>
-                    <p class="overview">{{
-                        movie.overview
-                            ? movie.overview.substring(0, 60) + '...'
-                            : '국내에 등록된 줄거리 요약 정보가 없습니다.'
-                        }}</p>
-                    <button @click="store.toggleFavorite(movie.id)" class="fav-btn"
-                        :class="{ active: store.favoriteMovieIds.has(movie.id) }">
-                        {{ store.favoriteMovieIds.has(movie.id) ? '💖 찜 해제' : '🤍 찜하기' }}
-                    </button>
-                </div>
-                <RouterLink :to="`/movies/${movie.id}`" class="stretched-link"
-                    :aria-label="`${movie.title} 상세 정보 보기`" />
-            </div>
-        </div>
+        <Pagination
+            v-if="listState.state === 'loaded'"
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            @page-change="onPageChange"
+        />
     </main>
 </template>
 
@@ -69,138 +132,54 @@ onMounted(async () => {
     color: #2c3e50;
 }
 
-.sub-title {
-    font-size: 14px;
-    color: #7f8c8d;
-    margin-top: 5px;
-}
-
-.status-message {
-    text-align: center;
-    font-size: 20px;
-    font-weight: bold;
-    padding: 50px;
-    border-radius: 12px;
-}
-
-.loading {
-    color: #3498db;
-    background-color: #e3f2fd;
-}
-
-.error {
-    color: #e74c3c;
-    background-color: #fdeaea;
-}
-
-.movie-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 30px;
-}
-
-.movie-card {
-    position: relative;
-    border-radius: 12px;
-    overflow: hidden;
-    background: white;
-    text-align: left;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-    transition: transform 0.2s ease;
+/* ── 정렬 탭 ── */
+.sort-section {
     display: flex;
-    flex-direction: column;
-}
-
-.movie-card:hover {
-    transform: translateY(-5px);
-}
-
-.poster {
-    width: 100%;
-    height: 380px;
-    object-fit: cover;
-}
-
-.poster-placeholder {
-    width: 100%;
-    height: 380px;
-    background-color: #ddd;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    color: #7f8c8d;
-    font-weight: bold;
+    gap: 8px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
 }
 
-.card-content {
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-}
-
-.title {
-    font-size: 18px;
-    color: #333;
-    margin: 0 0 6px 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-weight: bold;
-}
-
-.release-date {
-    font-size: 13px;
-    color: #7f8c8d;
-    margin-bottom: 10px;
-    font-weight: 500;
-}
-
-.rating {
-    font-weight: bold;
-    color: #f39c12;
-    margin-bottom: 10px;
-    font-size: 16px;
-}
-
-.overview {
-    font-size: 13px;
-    color: #555;
-    line-height: 1.4;
-    margin-bottom: 20px;
-    flex-grow: 1;
-}
-
-.fav-btn {
-    position: relative;
-    width: 100%;
-    z-index: 2;
-    padding: 12px;
+.sort-tab {
+    padding: 9px 18px;
+    border: 2px solid #e0e4e8;
+    border-radius: 50px;
+    background: #ffffff;
+    color: #5a6270;
+    font-size: 13.5px;
+    font-weight: 600;
     cursor: pointer;
-    border: none;
-    background: #ecf0f1;
-    color: #333;
-    border-radius: 8px;
-    font-weight: bold;
-    /* 원본의 오타 유지 (필요 시 font-weight로 수정 가능) */
-    font-size: 14px;
-    transition: 0.3s;
-    margin-top: auto;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+    white-space: nowrap;
 }
 
-.fav-btn.active {
-    background: #ff4757;
-    color: white;
+.sort-tab:hover {
+    border-color: #b0b8c4;
+    color: #2c3e50;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-/* ➕ [12주차 추가] 카드 껍데기를 가상으로 100% 덮는 투명 링크 스타일 */
-.stretched-link {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 1;
-    /* 층위 레이어 1단계 설정 */
+.sort-tab--active {
+    background: linear-gradient(135deg, #ff4757, #ff6b81);
+    border-color: transparent;
+    color: #ffffff;
+    box-shadow: 0 4px 16px rgba(255, 71, 87, 0.35);
+    transform: translateY(-2px);
+}
+
+/* ── 결과 정보 ── */
+.result-info {
+    text-align: center;
+    font-size: 13px;
+    color: #7f8c8d;
+    margin: 0 0 24px 0;
+}
+
+.result-info strong {
+    color: #2c3e50;
+    font-weight: 700;
 }
 </style>
